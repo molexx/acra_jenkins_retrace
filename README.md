@@ -54,3 +54,4 @@ Ensure the file is executable (chmod ugo+x acra-retrace) then call it with one p
 *   How do we trigger this nicely when looking at the Acralyzer web interface?
 *   Pass authentication details to the ACRA report site
 *   Get mapping.txt from Jenkins over HTTP, possibly with authentication
+*   Automatically update all the stacktraces in the database, I assume couch allows updates via HTTP POSTs so a bit more curl, some looping and maybe cron could automate the entire thing and have the de-obfuscated trace available in Acralyzer’s UI.
