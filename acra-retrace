@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# Copyright 2014 Neil Sedger
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+
+# Configuration:
+#   Edit JENKINS_JOB_NAME from 'master' below, or set it in your environment
+#   Edit EXTRACT_BUILD_NUM_FROM_FIELD and EXTRACT_BUILD_NUM_REGEX so that it can extract Jenkins' build number from some field in the ACRA report
+# 
+# Usage: pass one parameter, the URL of the report you're looking at in Acralyzer, e.g.
+#   ./acra-retrace http://acme.yourhost.com/acralyzer/_design/acralyzer/index.html#/report-details/myapp/ee4553-cc7e-52d9-c528-a2ce74a62f7c
+#   
+# See readme.md for more info
+#
+
+
+echo "JENKINS_JOB_NAME: ${JENKINS_JOB_NAME=master}"
+JENKINS_BUILDS=~jenkins/jobs/$JENKINS_JOB_NAME/builds
+EXTRACT_BUILD_NUM_FROM_FIELD=APP_VERSION_NAME
+EXTRACT_BUILD_NUM_REGEX='s/.*-ert(.*)_.*/\1/p'
+#the above regex extracts '277' from a version string like: 0.19beta-ert277_aaec7b9
+
+ACRALYZER_URL_REGEX="s/(https?):\/\/(.*):(.*)\/acralyzer\/_design\/acralyzer\/index.html#\/report-details\/(.*)\/(.*)$/"
+
+
+
+if [ "${1}" = "" ]; then
+  echo "Usage: acra-retrace acralyzerURL"
+  exit 5
+fi
+
+URL=$1
+
+PROTOCOL=$(echo ${URL} | sed -n -r ${ACRALYZER_URL_REGEX}\\1/p)
+DOMAIN=$(echo ${URL} | sed -n -r ${ACRALYZER_URL_REGEX}\\2/p)
+PORT=$(echo ${URL} | sed -n -r ${ACRALYZER_URL_REGEX}\\3/p)
+APP=$(echo ${URL} | sed -n -r ${ACRALYZER_URL_REGEX}\\4/p)
+ID=$(echo ${URL} | sed -n -r ${ACRALYZER_URL_REGEX}\\5/p)
+
+echo "PROTOCOL: ${PROTOCOL}"
+echo "DOMAIN: ${DOMAIN}"
+echo "PORT: ${PORT}"
+echo "APP: ${APP}"
+echo "ID: ${ID}"
+
+if [  "${PROTOCOL}" = "" ] || [ "${DOMAIN}" = "" ] || [ "${PORT}" = "" ] || [ "${APP}" = "" ] || [ "${ID}" = "" ]; then
+  echo "ERROR: could not parse Acralyzer url: '${URL}'"
+  exit 5
+fi
+
+ACRA_COUCH_URL=${PROTOCOL}://${DOMAIN}:${PORT}/acra-${APP}
+echo "ACRA_COUCH_URL: ${ACRA_COUCH_URL}"
+#use curl to GET the report's JSON from couchdb
+report_json=$(curl ${ACRA_COUCH_URL}/${ID} 2>/dev/null)
+
+CURL_RC=$?
+
+if [ "${CURL_RC}" != "0" ] ; then
+  echo "ERROR: curl returned $CURL_RC trying to GET from couch database URL ${ACRA_COUCH_URL}/${ID}"
+  exit 5
+fi
+
+if [ "${report_json}" = "" ] ; then
+  echo "ERROR: nothing returned from couch database URL ${ACRA_COUCH_URL}/${ID}"
+  exit 5
+fi
+
+#echo "report_json: ${report_json}"
+
+#use 'jq' to parse the JSON and return the value of the report field which contains the Jenkins build number (e.g. app version)
+field_containing_build_number=$(echo $report_json | jq ".${EXTRACT_BUILD_NUM_FROM_FIELD}"  | sed 's/\"//g' )
+JQ_RC=$?
+
+echo "JQ_RC: ${JQ_RC}, field_containing_build_number: ${field_containing_build_number}"
+
+if [ "${JQ_RC}" != "0" ] ; then
+  echo "ERROR: jq returned $JQ_RC trying to parse JSON retrieved from couch database URL ${ACRA_COUCH_URL}/${ID}: $field_containing_build_number"
+  exit 5
+fi
+
+if [ "${field_containing_build_number}" = "" ] || [ "${field_containing_build_number}" = "null" ] ; then
+  echo "ERROR: could not find ${EXTRACT_BUILD_NUM_FROM_FIELD} in JSON returned from couch database URL ${ACRA_COUCH_URL}/${ID}"
+  exit 5
+fi
+
+
+#extract the build number from the field using regex
+build_num=$(echo ${field_containing_build_number} | sed -n -r $EXTRACT_BUILD_NUM_REGEX)
+if [ "${build_num}" = "" ] ; then
+  echo "ERROR: could not extract Jenkins build number from report's ${EXTRACT_BUILD_NUM_FROM_FIELD}: ${field_containing_build_number}"
+  exit 5
+fi
+
+#now we can build the path to the mapping file archived within the Jenkins build dir
+mapping_file=${JENKINS_BUILDS}/${build_num}/archive/bin/proguard/mapping.txt
+
+echo -e "field_containing_build_number: '${field_containing_build_number}', build_num: ${build_num}, mapping_file: '${mapping_file}'\n"
+
+#use 'jq' to parse the JSON and get the STACK_TRACE. De-array it then remove the tab and double-quote characters
+stacktrace=$(echo $report_json | jq ".STACK_TRACE | .[]" | sed 's/\\t//g' | sed 's/\"//g' )
+
+#echo "obfuscated stacktrace: ${stacktrace}"
+
+echo -e "\npassing obfuscated stacktrace to: '$ANDROID_HOME/tools/proguard/bin/retrace.sh -verbose $mapping_file':\n"
+echo "$stacktrace" | $ANDROID_HOME/tools/proguard/bin/retrace.sh -verbose $mapping_file
