@@ -22,7 +22,7 @@
 # Usage: pass one parameter, the URL of the report you're looking at in Acralyzer, e.g.
 #   ./acra-retrace http://acme.yourhost.com/acralyzer/_design/acralyzer/index.html#/report-details/myapp/ee4553-cc7e-52d9-c528-a2ce74a62f7c
 #   
-# See readme.md for more info
+# See README.md for more info
 #
 
 
