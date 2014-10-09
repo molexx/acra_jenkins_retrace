@@ -8,7 +8,7 @@ bash script to de-obfuscate stacktraces using the Acralyzer URL and access to Je
 
 ####commandline tools
 curl - a http downloader, you probably already have it  
-jq - a jquery parser - http://stedolan.github.io/jq/ - available in Fedora repo
+jq - a JSON parser - http://stedolan.github.io/jq/ - available in Fedora repo
   
   
   
@@ -23,7 +23,7 @@ in the comma-separated list.
 The ACRA report needs to include Jenkins' build number somewhere, such as the app's version string.  
   
   
-
+  
 ####Configuration
 You'll probably need to edit some of the vars set at the top of the file:  
 
@@ -35,8 +35,9 @@ You'll probably need to edit some of the vars set at the top of the file:
                                     and the regex:  
                                       's/.*-ert(.*)_.*/\1/p'
                                     extracts the number '277' which has been set into AndroidManifest.xml from Jenkins' BUILD_NUMBER at build time.
-
-
+  
+  
+  
 ####Script execution
 
 Currently the mapping.txt is read from the local filesystem so the script must be run on a machine with filesystem access to Jenkins' jobs directory. It could be enhanced to download this via HTTP using curl.
